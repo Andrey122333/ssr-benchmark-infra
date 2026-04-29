@@ -1,0 +1,62 @@
+name: Lighthouse Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment
+        required: true
+        type: environment
+      target:
+        description: Target framework VPS
+        required: true
+        type: choice
+        options:
+          - next
+          - nuxt
+          - svelte
+      service:
+        description: Service type
+        required: true
+        type: choice
+        options:
+          - landing
+          - catalog
+      url:
+        description: Full URL to audit
+        required: true
+        type: string
+      runs:
+        description: Number of Lighthouse runs
+        required: true
+        default: "3"
+        type: string
+
+run-name: >
+  Lighthouse smoke ${{ inputs.target }} / ${{ inputs.service }}
+  by @${{ github.actor }}
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Healthcheck before Lighthouse
+        run: |
+          python3 --version
+          python3 scripts/healthcheck.py --url "${{ inputs.url }}" --attempts 10 --delay 5 --timeout 10
+
+      - name: Run Lighthouse CI
+        id: lighthouse
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            ${{ inputs.url }}
+          runs: ${{ inputs.runs }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          configPath: ./lighthouse/configs/landing/lighthouserc.json

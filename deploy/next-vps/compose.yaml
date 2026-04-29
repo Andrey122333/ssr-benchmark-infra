@@ -1,0 +1,22 @@
+services:
+  nextjs-landing:
+    image: ${LANDING_IMAGE}
+    container_name: nextjs-landing
+    ports:
+      - "${LANDING_EXTERNAL_PORT}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    restart: unless-stopped
+
+  nextjs-catalog:
+    image: ${CATALOG_IMAGE}
+    container_name: nextjs-catalog
+    ports:
+      - "${CATALOG_EXTERNAL_PORT}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    restart: unless-stopped

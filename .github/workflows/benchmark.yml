@@ -1,0 +1,149 @@
+name: Benchmark SSR App
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment
+        required: true
+        type: environment
+      target:
+        description: Target framework VPS
+        required: true
+        type: choice
+        options:
+          - next
+          - nuxt
+          - svelte
+      service:
+        description: Benchmark target service
+        required: true
+        type: choice
+        options:
+          - landing
+          - catalog
+      url:
+        description: Full URL to benchmark
+        required: true
+        type: string
+      lighthouse_runs:
+        description: Number of Lighthouse runs
+        required: true
+        default: "3"
+        type: string
+      k6_script:
+        description: k6 script file
+        required: true
+        type: choice
+        options:
+          - k6/landing.js
+          - k6/catalog.js
+      k6_flags:
+        description: Additional k6 flags
+        required: false
+        default: "--out json=results/k6/results.json"
+        type: string
+
+run-name: >
+  Benchmark ${{ inputs.target }} / ${{ inputs.service }}
+  by @${{ github.actor }}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show selected inputs
+        run: |
+          echo "environment=${{ inputs.environment }}"
+          echo "target=${{ inputs.target }}"
+          echo "service=${{ inputs.service }}"
+          echo "url=${{ inputs.url }}"
+          echo "lighthouse_runs=${{ inputs.lighthouse_runs }}"
+          echo "k6_script=${{ inputs.k6_script }}"
+          echo "k6_flags=${{ inputs.k6_flags }}"
+
+      - name: Switch active service on VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          python scripts/switch_service.py \
+            --target "${{ inputs.target }}" \
+            --service "${{ inputs.service }}"
+
+      - name: Healthcheck before benchmark
+        run: |
+          python scripts/healthcheck.py \
+            --url "${{ inputs.url }}" \
+            --attempts 15 \
+            --delay 5 \
+            --timeout 10
+
+      - name: Run Lighthouse CI
+        id: lighthouse
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            ${{ inputs.url }}
+          runs: ${{ inputs.lighthouse_runs }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          configPath: ./lighthouse/configs/landing/lighthouserc.json
+
+      - name: Prepare k6 results directory
+        run: mkdir -p results/k6
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 benchmark
+        uses: grafana/run-k6-action@v1
+        env:
+          BASE_URL: ${{ inputs.url }}
+        with:
+          path: ${{ inputs.k6_script }}
+          flags: ${{ inputs.k6_flags }}
+
+      - name: Upload k6 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results-${{ inputs.target }}-${{ inputs.service }}
+          path: results/k6/
+          if-no-files-found: warn
+
+      - name: Upload benchmark metadata
+        if: always()
+        run: |
+          mkdir -p results/meta
+          cat <<EOF > results/meta/run-info.txt
+          environment=${{ inputs.environment }}
+          target=${{ inputs.target }}
+          service=${{ inputs.service }}
+          url=${{ inputs.url }}
+          lighthouse_runs=${{ inputs.lighthouse_runs }}
+          k6_script=${{ inputs.k6_script }}
+          k6_flags=${{ inputs.k6_flags }}
+          actor=${{ github.actor }}
+          sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          EOF
+
+      - name: Upload benchmark metadata artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-meta-${{ inputs.target }}-${{ inputs.service }}
+          path: results/meta/

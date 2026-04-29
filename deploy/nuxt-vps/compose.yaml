@@ -1,0 +1,22 @@
+services:
+  nuxt-landing:
+    image: ${LANDING_IMAGE}
+    container_name: nuxt-landing
+    ports:
+      - "${LANDING_EXTERNAL_PORT}:3000"
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+    restart: unless-stopped
+
+  nuxt-catalog:
+    image: ${CATALOG_IMAGE}
+    container_name: nuxt-catalog
+    ports:
+      - "${CATALOG_EXTERNAL_PORT}:3000"
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+    restart: unless-stopped

@@ -1,0 +1,117 @@
+name: Deploy SSR Benchmark Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment
+        required: true
+        type: environment
+      target:
+        description: Target VPS
+        required: true
+        type: choice
+        options:
+          - next
+          - nuxt
+          - svelte
+      service:
+        description: Service to deploy
+        required: true
+        type: choice
+        options:
+          - all
+          - landing
+          - catalog
+      tag:
+        description: Docker image tag
+        required: true
+        default: latest
+        type: string
+
+run-name: >
+  Deploy ${{ inputs.target }} / ${{ inputs.service }} / ${{ inputs.tag }}
+  by @${{ github.actor }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show selected inputs
+        run: |
+          echo "environment=${{ inputs.environment }}"
+          echo "target=${{ inputs.target }}"
+          echo "service=${{ inputs.service }}"
+          echo "tag=${{ inputs.tag }}"
+
+      - name: Run deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          python scripts/deploy.py \
+            --target "${{ inputs.target }}" \
+            --service "${{ inputs.service }}" \
+            --tag "${{ inputs.tag }}"
+
+      - name: Healthcheck next landing
+        if: ${{ inputs.target == 'next' && inputs.service == 'landing' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3001"
+
+      - name: Healthcheck next catalog
+        if: ${{ inputs.target == 'next' && inputs.service == 'catalog' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3010"
+
+      - name: Healthcheck nuxt landing
+        if: ${{ inputs.target == 'nuxt' && inputs.service == 'landing' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3002"
+
+      - name: Healthcheck nuxt catalog
+        if: ${{ inputs.target == 'nuxt' && inputs.service == 'catalog' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3012"
+
+      - name: Healthcheck svelte landing
+        if: ${{ inputs.target == 'svelte' && inputs.service == 'landing' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3003"
+
+      - name: Healthcheck svelte catalog
+        if: ${{ inputs.target == 'svelte' && inputs.service == 'catalog' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3013"
+
+      - name: Healthcheck next all
+        if: ${{ inputs.target == 'next' && inputs.service == 'all' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3001"
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3010"
+
+      - name: Healthcheck nuxt all
+        if: ${{ inputs.target == 'nuxt' && inputs.service == 'all' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3002"
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3012"
+
+      - name: Healthcheck svelte all
+        if: ${{ inputs.target == 'svelte' && inputs.service == 'all' }}
+        run: |
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3003"
+          python scripts/healthcheck.py --url "http://${{ secrets.SSH_HOST }}:3013"
