@@ -60,6 +60,12 @@ jobs:
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
       - name: Run deploy
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -68,6 +74,7 @@ jobs:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SSH_KEY_PATH: ~/.ssh/deploy_key
         run: |
           python scripts/deploy.py \
             --target "${{ inputs.target }}" \

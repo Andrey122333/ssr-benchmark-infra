@@ -91,6 +91,7 @@ def main():
     parser.add_argument("--ghcr-user", default=os.getenv("GHCR_USERNAME"), help="GHCR username")
     parser.add_argument("--ghcr-token", default=os.getenv("GHCR_TOKEN"), help="GHCR token")
     parser.add_argument("--write-env-only", action="store_true", help="Only generate local .env file")
+    parser.add_argument("--ssh-key", default=os.getenv("SSH_KEY_PATH"), help="Path to SSH private key")
     args = parser.parse_args()
 
     if not args.write_env_only:
@@ -122,8 +123,15 @@ def main():
         return
 
     remote_dir = f"{args.remote_path.rstrip('/')}/{args.target}"
-    ssh_base = f"ssh -p {shlex.quote(str(args.port))} {shlex.quote(args.user)}@{shlex.quote(args.host)}"
-    scp_base = f"scp -P {shlex.quote(str(args.port))}"
+    key_opt = f"-i {shlex.quote(args.ssh_key)}" if args.ssh_key else ""
+
+    ssh_base = (
+        f"ssh -p {shlex.quote(str(args.port))} "
+        f"{key_opt} "
+        f"{shlex.quote(args.user)}@{shlex.quote(args.host)}"
+    )
+
+    scp_base = f"scp -P {shlex.quote(str(args.port))} {key_opt}"
 
     run(f'{ssh_base} "mkdir -p {shlex.quote(remote_dir)}"')
 
