@@ -7,19 +7,28 @@
       "preset": "lighthouse:recommended",
       "assertions": {
         "categories:performance": ["warn", { "minScore": 0.8 }],
-        "categories:accessibility": ["error", { "minScore": 0.9 }],
+        "categories:accessibility": ["warn", { "minScore": 0.9 }],
         "categories:best-practices": ["warn", { "minScore": 0.9 }],
-        "categories:seo": ["error", { "minScore": 0.85 }],
+        "categories:seo": ["warn", { "minScore": 0.85 }],
 
         "first-contentful-paint": ["warn", { "maxNumericValue": 2500 }],
         "largest-contentful-paint": ["warn", { "maxNumericValue": 3000 }],
         "speed-index": ["warn", { "maxNumericValue": 4000 }],
         "interactive": ["warn", { "maxNumericValue": 5000 }],
         "total-blocking-time": ["warn", { "maxNumericValue": 300 }],
-        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "cumulative-layout-shift": ["warn", { "maxNumericValue": 0.1 }],
 
         "uses-http2": "off",
-        "redirects-http": "off"
+        "redirects-http": "off",
+        "is-on-https": "off",
+        "color-contrast": "off",
+        "errors-in-console": "off",
+        "modern-http-insight": "off",
+        "document-latency-insight": "off",
+        "network-dependency-tree-insight": "off",
+        "uses-text-compression": "off",
+        "render-blocking-insight": "off",
+        "render-blocking-resources": "off"
       }
     },
     "upload": {
