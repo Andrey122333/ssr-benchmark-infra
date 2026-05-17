@@ -33,5 +33,5 @@ export default function () {
     'landing html received': (r) => r.body && r.body.length > 0,
   });
 
-  sleep(Number(__ENV.SLEEP || 0.2));
+  // sleep(Number(__ENV.SLEEP || 0.2));
 }

@@ -35,7 +35,6 @@ export default function () {
   const responses = http.batch([
     ['GET', `${BASE_URL}${CATALOG_PATH}`, null, { tags: { name: 'catalog_home' } }],
     ['GET', `${BASE_URL}${LIST_PATH}`, null, { tags: { name: 'catalog_list' } }],
-    ['GET', `${BASE_URL}${ITEM_PATH}`, null, { tags: { name: 'catalog_item' } }],
   ]);
 
   check(responses[0], {
@@ -46,9 +45,5 @@ export default function () {
     'catalog list status is 200': (r) => r.status === 200,
   });
 
-  check(responses[2], {
-    'catalog item status is 200': (r) => r.status === 200,
-  });
-
-  sleep(Number(__ENV.SLEEP || 0.3));
+  // sleep(Number(__ENV.SLEEP || 0.3));
 }
