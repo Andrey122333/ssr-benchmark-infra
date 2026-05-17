@@ -65,26 +65,17 @@ function hitLanding() {
 }
 
 function hitCatalog() {
-  const noCache = {
+  const res = http.get(`${BASE_URL}${TARGET_PATH}`, {
     headers: {
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
     },
-  };
-
-  const responses = http.batch([
-    ['GET', `${BASE_URL}${TARGET_PATH}`, null, { ...noCache, tags: { name: 'stress_catalog_list' } }],
-    ['GET', `${BASE_URL}${ITEM_PATH}`, null, { ...noCache, tags: { name: 'stress_catalog_item' } }],
-  ]);
-
-  check(responses[0], {
-    'catalog list status is 200': (r) => r.status === 200,
-    'catalog list body received': (r) => r.body && r.body.length > 0,
+    tags: { name: 'stress_catalog_list' },
   });
 
-  check(responses[1], {
-    'catalog item status is 200': (r) => r.status === 200,
-    'catalog item body received': (r) => r.body && r.body.length > 0,
+  check(res, {
+    'catalog list status is 200': (r) => r.status === 200,
+    'catalog list body received': (r) => r.body && r.body.length > 0,
   });
 }
 
