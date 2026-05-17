@@ -1,9 +1,8 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
 const TARGET_PATH = __ENV.TARGET_PATH || '/catalog';
-const ITEM_PATH = __ENV.ITEM_PATH || '/catalog/item-1';
 const MODE = __ENV.MODE || 'catalog';
 
 const START_RATE = Number(__ENV.START_RATE || 20);
@@ -24,11 +23,16 @@ const COOLDOWN_DURATION = __ENV.COOLDOWN_DURATION || '30s';
 
 export const options = {
   discardResponseBodies: true,
+  // ВАЖНО: thresholds НЕ останавливают тест (abortOnFail: false), они только
+  // отмечают тест как failed в summary. Анализатор k6_analyze.py использует
+  // собственное определение точки отказа (rate>1% ИЛИ p95>1000ms в скользящем
+  // окне 10 секунд), которое не зависит от этих thresholds.
+  // Эти thresholds оставлены как "санитарные" контрольные точки.
   thresholds: {
-    http_req_failed:   [{ threshold: 'rate<0.05',  abortOnFail: false }],
-    http_req_duration: [{ threshold: 'p(95)<3000', abortOnFail: false },
-                        { threshold: 'p(99)<5000', abortOnFail: false }],
-    checks:            [{ threshold: 'rate>0.95',  abortOnFail: false }],
+    http_req_failed:   [{ threshold: 'rate<0.01',  abortOnFail: false }],
+    http_req_duration: [{ threshold: 'p(95)<1000', abortOnFail: false },
+                        { threshold: 'p(99)<3000', abortOnFail: false }],
+    checks:            [{ threshold: 'rate>0.99',  abortOnFail: false }],
   },
   scenarios: {
     stress_until_failure: {
@@ -52,13 +56,9 @@ export const options = {
 
 function hitLanding() {
   const res = http.get(`${BASE_URL}${TARGET_PATH}`, {
-    headers: {
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-    },
+    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
     tags: { name: 'stress_landing' },
   });
-
   check(res, {
     'landing status is 200': (r) => r.status === 200,
     'landing has body': (r) => parseInt(r.headers['Content-Length'] || '0') > 0,
@@ -67,13 +67,9 @@ function hitLanding() {
 
 function hitCatalog() {
   const res = http.get(`${BASE_URL}${TARGET_PATH}`, {
-    headers: {
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-    },
+    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
     tags: { name: 'stress_catalog_list' },
   });
-
   check(res, {
     'catalog list status is 200': (r) => r.status === 200,
     'catalog has body': (r) => Number(r.headers['Content-Length'] || 0) > 0,
@@ -81,11 +77,6 @@ function hitCatalog() {
 }
 
 export default function () {
-  if (MODE === 'landing') {
-    hitLanding();
-  } else {
-    hitCatalog();
-  }
-
-  // sleep(Number(__ENV.SLEEP || 0.1));
+  if (MODE === 'landing') hitLanding();
+  else hitCatalog();
 }

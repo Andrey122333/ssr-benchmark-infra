@@ -1,0 +1,253 @@
+name: K6 Stress Series
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment
+        required: true
+        type: environment
+      target:
+        description: Target framework VPS
+        required: true
+        type: choice
+        options:
+          - next
+          - nuxt
+          - svelte
+      service:
+        description: Benchmark target service
+        required: true
+        type: choice
+        options:
+          - landing
+          - catalog
+      url:
+        description: Full URL to benchmark
+        required: true
+        type: string
+      k6_script:
+        description: k6 script file
+        required: true
+        default: k6/stress.js
+        type: choice
+        options:
+          - k6/stress.js
+          - k6/landing.js
+          - k6/catalog.js
+      k6_env_flags:
+        description: "Extra k6 ENV vars (e.g. MODE=catalog STEP6_TARGET=700)"
+        required: false
+        default: ""
+        type: string
+      runs:
+        description: Number of stress runs in this series
+        required: true
+        default: "7"
+        type: string
+      pause_seconds:
+        description: Pause between runs (seconds) — server cooldown
+        required: true
+        default: "300"
+        type: string
+
+# Имя run видно в UI Actions — сразу понятно, какая серия идёт
+run-name: "K6 series ${{ inputs.target }}/${{ inputs.service }} × ${{ inputs.runs }} by @${{ github.actor }}"
+
+# Защищаемся от параллельных серий на одной ячейке
+concurrency:
+  group: k6-series-${{ inputs.target }}-${{ inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+  k6-series:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    # 7 прогонов × ~7 мин + 6 пауз × 5 мин = ~80 мин. Даём запас.
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Show selected inputs
+        run: |
+          echo "environment=${{ inputs.environment }}"
+          echo "target=${{ inputs.target }}"
+          echo "service=${{ inputs.service }}"
+          echo "url=${{ inputs.url }}"
+          echo "k6_script=${{ inputs.k6_script }}"
+          echo "k6_env_flags=${{ inputs.k6_env_flags }}"
+          echo "runs=${{ inputs.runs }}"
+          echo "pause_seconds=${{ inputs.pause_seconds }}"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p $HOME/.ssh
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> $HOME/.ssh/known_hosts
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > $HOME/.ssh/deploy_key
+          chmod 600 $HOME/.ssh/deploy_key
+
+      # Маппинг target → имя фреймворка для структуры папок
+      # next → nextjs, nuxt → nuxt, svelte → sveltekit
+      - name: Compute framework name
+        id: fw
+        run: |
+          case "${{ inputs.target }}" in
+            next)   echo "name=nextjs"    >> $GITHUB_OUTPUT ;;
+            nuxt)   echo "name=nuxt"      >> $GITHUB_OUTPUT ;;
+            svelte) echo "name=sveltekit" >> $GITHUB_OUTPUT ;;
+            *) echo "Unknown target: ${{ inputs.target }}" >&2; exit 1 ;;
+          esac
+
+      - name: Switch active service on VPS
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          SSH_KEY_PATH: /home/runner/.ssh/deploy_key
+        run: |
+          python scripts/switch_service.py \
+            --target "${{ inputs.target }}" \
+            --service "${{ inputs.service }}"
+
+      - name: Healthcheck before series
+        run: |
+          python scripts/healthcheck.py \
+            --url "${{ inputs.url }}" \
+            --attempts 15 \
+            --delay 5 \
+            --timeout 10
+
+      - name: Prepare results directory
+        run: |
+          FW="${{ steps.fw.outputs.name }}"
+          mkdir -p "raw/${FW}/${{ inputs.service }}"
+
+      - name: Run k6 series
+        env:
+          BASE_URL: ${{ inputs.url }}
+          K6_ENV_FLAGS: ${{ inputs.k6_env_flags }}
+          RUNS: ${{ inputs.runs }}
+          PAUSE: ${{ inputs.pause_seconds }}
+          FW: ${{ steps.fw.outputs.name }}
+          SERVICE: ${{ inputs.service }}
+          SCRIPT: ${{ inputs.k6_script }}
+        run: |
+          set -e
+          OUT_DIR="raw/${FW}/${SERVICE}"
+          mkdir -p "${OUT_DIR}"
+
+          # Готовим строку ENV-флагов для k6
+          K6_ENV_ARGS="-e BASE_URL=$BASE_URL"
+          if [ -n "$K6_ENV_FLAGS" ]; then
+            for pair in $K6_ENV_FLAGS; do
+              K6_ENV_ARGS="$K6_ENV_ARGS -e $pair"
+            done
+          fi
+
+          echo "=== Series config ==="
+          echo "  framework: $FW"
+          echo "  service:   $SERVICE"
+          echo "  url:       $BASE_URL"
+          echo "  runs:      $RUNS"
+          echo "  pause:     ${PAUSE}s between runs"
+          echo "  script:    $SCRIPT"
+          echo "  env args:  $K6_ENV_ARGS"
+          echo "  output:    ${OUT_DIR}/run_NN.json"
+          echo "===================="
+
+          for i in $(seq 1 "$RUNS"); do
+            RUN_NUM=$(printf "%02d" "$i")
+            RUN_FILE="${OUT_DIR}/run_${RUN_NUM}.json"
+            SUMMARY_FILE="${OUT_DIR}/run_${RUN_NUM}_summary.json"
+
+            echo ""
+            echo "════════════════════════════════════════════"
+            echo " Run ${i}/${RUNS} — starting at $(date -u +%H:%M:%S) UTC"
+            echo "════════════════════════════════════════════"
+
+            # Healthcheck перед каждым прогоном — убеждаемся,
+            # что сервер действительно ответил после паузы.
+            python scripts/healthcheck.py \
+              --url "$BASE_URL" \
+              --attempts 5 \
+              --delay 3 \
+              --timeout 10 || {
+                echo "Healthcheck failed before run ${i}, aborting series"
+                exit 1
+              }
+
+            # Запускаем k6. continue-on-error на уровне шага не подходит
+            # (нам надо знать прошёл/провалился каждый прогон), поэтому ловим
+            # exit code вручную. Threshold-провал НЕ считаем фатальным —
+            # это ожидаемая ситуация в стресс-тесте до отказа.
+            set +e
+            k6 run $K6_ENV_ARGS \
+              --out json="$RUN_FILE" \
+              --summary-export="$SUMMARY_FILE" \
+              "$SCRIPT"
+            K6_EXIT=$?
+            set -e
+
+            if [ -f "$RUN_FILE" ]; then
+              SIZE=$(du -h "$RUN_FILE" | cut -f1)
+              echo "Run ${i}/${RUNS} done. exit=$K6_EXIT, size=$SIZE"
+            else
+              echo "WARNING: Run ${i}/${RUNS} did not produce $RUN_FILE (exit=$K6_EXIT)"
+            fi
+
+            # Пауза между прогонами (кроме после последнего)
+            if [ "$i" -lt "$RUNS" ]; then
+              echo "Cooldown ${PAUSE}s before next run..."
+              sleep "$PAUSE"
+            fi
+          done
+
+          echo ""
+          echo "=== Series complete. Files: ==="
+          ls -lh "${OUT_DIR}"
+
+      - name: Save series metadata
+        if: always()
+        run: |
+          FW="${{ steps.fw.outputs.name }}"
+          mkdir -p "raw/${FW}/${{ inputs.service }}"
+          cat <<EOF > "raw/${FW}/${{ inputs.service }}/series-info.json"
+          {
+            "environment": "${{ inputs.environment }}",
+            "target": "${{ inputs.target }}",
+            "framework": "${FW}",
+            "service": "${{ inputs.service }}",
+            "url": "${{ inputs.url }}",
+            "k6_script": "${{ inputs.k6_script }}",
+            "k6_env_flags": "${{ inputs.k6_env_flags }}",
+            "runs_requested": "${{ inputs.runs }}",
+            "pause_seconds": "${{ inputs.pause_seconds }}",
+            "actor": "${{ github.actor }}",
+            "sha": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}",
+            "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload k6 series artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Имя содержит target/service — потом легко собрать всё локально
+          name: k6-series-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          # Путь под корнем raw/ — внутри артефакта будет та же иерархия,
+          # что нам нужна локально (раздел 3.3 диплома)
+          path: raw/
+          if-no-files-found: error
+          retention-days: 30
