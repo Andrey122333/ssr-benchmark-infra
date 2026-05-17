@@ -40,7 +40,7 @@ on:
           - k6/catalog.js
           - k6/stress.js
       k6_env_flags:
-        description: "Extra k6 ENV vars (e.g. MODE=catalog STEP6_TARGET=700)"
+        description: "Extra k6 ENV vars (e.g. RATE=30 DURATION=5m or MODE=catalog STEP6_TARGET=700)"
         required: false
         default: ""
         type: string
@@ -80,10 +80,11 @@ jobs:
         run: |
           mkdir -p $HOME/.ssh
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> $HOME/.ssh/known_hosts
+          ssh-keyscan -p ${{ secrets.BENCH_SSH_PORT }} ${{ secrets.BENCH_SSH_HOST }} >> $HOME/.ssh/known_hosts
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > $HOME/.ssh/deploy_key
           chmod 600 $HOME/.ssh/deploy_key
 
-      - name: Switch active service on VPS
+      - name: Switch active service on framework VPS
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -103,8 +104,7 @@ jobs:
             --delay 5 \
             --timeout 10
 
-      # ── Lighthouse mobile ─────────────────────────────────────────────────
-      - name: Clean Lighthouse output
+      - name: Clean previous Lighthouse results
         run: rm -rf .lighthouseci
 
       - name: Run Lighthouse CI (mobile)
@@ -118,22 +118,23 @@ jobs:
           temporaryPublicStorage: false
           configPath: ./lighthouse/configs/${{ inputs.service }}/lighthouserc.json
 
-      - name: Archive mobile results
+      - name: Archive Lighthouse mobile results
         if: always()
         run: |
           mkdir -p results/lighthouse/mobile
-          [ -d .lighthouseci ] && cp -R .lighthouseci/. results/lighthouse/mobile/
+          if [ -d .lighthouseci ]; then
+            cp -R .lighthouseci/. results/lighthouse/mobile/
+          fi
 
       - name: Upload Lighthouse mobile artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lh-mobile-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          name: lighthouse-mobile-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
           path: results/lighthouse/mobile/
           if-no-files-found: warn
 
-      # ── Lighthouse desktop ────────────────────────────────────────────────
-      - name: Clean Lighthouse output
+      - name: Clean before desktop Lighthouse
         run: rm -rf .lighthouseci
 
       - name: Run Lighthouse CI (desktop)
@@ -147,21 +148,22 @@ jobs:
           temporaryPublicStorage: false
           configPath: ./lighthouse/configs/${{ inputs.service }}/lighthouserc-desktop.json
 
-      - name: Archive desktop results
+      - name: Archive Lighthouse desktop results
         if: always()
         run: |
           mkdir -p results/lighthouse/desktop
-          [ -d .lighthouseci ] && cp -R .lighthouseci/. results/lighthouse/desktop/
+          if [ -d .lighthouseci ]; then
+            cp -R .lighthouseci/. results/lighthouse/desktop/
+          fi
 
       - name: Upload Lighthouse desktop artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lh-desktop-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          name: lighthouse-desktop-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
           path: results/lighthouse/desktop/
           if-no-files-found: warn
 
-      # ── Lighthouse summary ────────────────────────────────────────────────
       - name: Print Lighthouse summary (mobile)
         if: always()
         run: |
@@ -186,42 +188,64 @@ jobs:
             echo "No desktop assertion-results.json found"
           fi
 
-      # ── k6 ────────────────────────────────────────────────────────────────
-      - name: Prepare k6 results directory
-        run: mkdir -p results/k6
-
-      - name: Setup k6
-        uses: grafana/setup-k6-action@v1
-
-      - name: Run k6 benchmark
-        env:
-          BASE_URL: ${{ inputs.url }}
-          K6_ENV_FLAGS: ${{ inputs.k6_env_flags }}
+      - name: Prepare local results directories
         run: |
-          K6_ENV_ARGS="-e BASE_URL=$BASE_URL"
-          if [ -n "$K6_ENV_FLAGS" ]; then
-            for pair in $K6_ENV_FLAGS; do
+          mkdir -p results/k6
+          mkdir -p results/meta
+
+      - name: Upload k6 scripts to bench server
+        run: |
+          ssh -i $HOME/.ssh/deploy_key \
+            -p ${{ secrets.BENCH_SSH_PORT }} \
+            ${{ secrets.BENCH_SSH_USER }}@${{ secrets.BENCH_SSH_HOST }} \
+            "mkdir -p /opt/bench/k6 /opt/bench/results && rm -f /opt/bench/results/results.json /opt/bench/results/summary.json"
+
+          scp -i $HOME/.ssh/deploy_key \
+            -P ${{ secrets.BENCH_SSH_PORT }} \
+            k6/*.js \
+            ${{ secrets.BENCH_SSH_USER }}@${{ secrets.BENCH_SSH_HOST }}:/opt/bench/k6/
+
+      - name: Run k6 on bench server
+        run: |
+          K6_ENV_ARGS="-e BASE_URL=${{ inputs.url }}"
+          if [ -n "${{ inputs.k6_env_flags }}" ]; then
+            for pair in ${{ inputs.k6_env_flags }}; do
               K6_ENV_ARGS="$K6_ENV_ARGS -e $pair"
             done
           fi
-          k6 run $K6_ENV_ARGS \
-            --out json=results/k6/results.json \
-            --summary-export=results/k6/summary.json \
-            ${{ inputs.k6_script }}
+
+          ssh -i $HOME/.ssh/deploy_key \
+            -p ${{ secrets.BENCH_SSH_PORT }} \
+            ${{ secrets.BENCH_SSH_USER }}@${{ secrets.BENCH_SSH_HOST }} \
+            "cd /opt/bench && k6 run $K6_ENV_ARGS \
+              --out json=/opt/bench/results/results.json \
+              --summary-export=/opt/bench/results/summary.json \
+              /opt/bench/${{ inputs.k6_script }}"
+
+      - name: Fetch k6 results from bench server
+        if: always()
+        run: |
+          scp -i $HOME/.ssh/deploy_key \
+            -P ${{ secrets.BENCH_SSH_PORT }} \
+            ${{ secrets.BENCH_SSH_USER }}@${{ secrets.BENCH_SSH_HOST }}:/opt/bench/results/results.json \
+            results/k6/results.json || true
+
+          scp -i $HOME/.ssh/deploy_key \
+            -P ${{ secrets.BENCH_SSH_PORT }} \
+            ${{ secrets.BENCH_SSH_USER }}@${{ secrets.BENCH_SSH_HOST }}:/opt/bench/results/summary.json \
+            results/k6/summary.json || true
 
       - name: Upload k6 artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: k6-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          name: k6-results-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
           path: results/k6/
           if-no-files-found: warn
 
-      # ── Metadata ──────────────────────────────────────────────────────────
       - name: Save benchmark metadata
         if: always()
         run: |
-          mkdir -p results/meta
           cat <<EOF > results/meta/run-info.json
           {
             "environment": "${{ inputs.environment }}",
@@ -231,6 +255,8 @@ jobs:
             "lighthouse_runs": "${{ inputs.lighthouse_runs }}",
             "k6_script": "${{ inputs.k6_script }}",
             "k6_env_flags": "${{ inputs.k6_env_flags }}",
+            "framework_ssh_host": "${{ secrets.SSH_HOST }}",
+            "bench_ssh_host": "${{ secrets.BENCH_SSH_HOST }}",
             "actor": "${{ github.actor }}",
             "sha": "${{ github.sha }}",
             "run_id": "${{ github.run_id }}",
@@ -238,10 +264,10 @@ jobs:
           }
           EOF
 
-      - name: Upload metadata artifact
+      - name: Upload benchmark metadata artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: meta-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          name: benchmark-meta-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
           path: results/meta/
           if-no-files-found: warn

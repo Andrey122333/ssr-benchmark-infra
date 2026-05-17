@@ -32,14 +32,13 @@ on:
         default: "3"
         type: string
 
-run-name: >
-  Lighthouse smoke ${{ inputs.target }} / ${{ inputs.service }}
-  by @${{ github.actor }}
+run-name: "Lighthouse smoke ${{ inputs.target }}/${{ inputs.service }} by @${{ github.actor }}"
 
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -47,16 +46,117 @@ jobs:
 
       - name: Healthcheck before Lighthouse
         run: |
-          python3 --version
-          python3 scripts/healthcheck.py --url "${{ inputs.url }}" --attempts 10 --delay 5 --timeout 10
+          python3 scripts/healthcheck.py \
+            --url "${{ inputs.url }}" \
+            --attempts 10 \
+            --delay 5 \
+            --timeout 10
 
-      - name: Run Lighthouse CI
-        id: lighthouse
+      # ── Mobile ───────────────────────────────────────────────────────────
+      - name: Clean Lighthouse output
+        run: rm -rf .lighthouseci
+
+      - name: Run Lighthouse CI (mobile)
+        id: lighthouse_mobile
         uses: treosh/lighthouse-ci-action@v12
         with:
           urls: |
             ${{ inputs.url }}
           runs: ${{ inputs.runs }}
-          uploadArtifacts: true
-          temporaryPublicStorage: true
-          configPath: ./lighthouse/configs/landing/lighthouserc.json
+          uploadArtifacts: false
+          temporaryPublicStorage: false
+          configPath: ./lighthouse/configs/${{ inputs.service }}/lighthouserc.json
+
+      - name: Archive mobile results
+        if: always()
+        run: |
+          mkdir -p results/lighthouse/mobile
+          [ -d .lighthouseci ] && cp -R .lighthouseci/. results/lighthouse/mobile/
+
+      - name: Upload mobile artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-mobile-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          path: results/lighthouse/mobile/
+          if-no-files-found: warn
+
+      # ── Desktop ──────────────────────────────────────────────────────────
+      - name: Clean Lighthouse output
+        run: rm -rf .lighthouseci
+
+      - name: Run Lighthouse CI (desktop)
+        id: lighthouse_desktop
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            ${{ inputs.url }}
+          runs: ${{ inputs.runs }}
+          uploadArtifacts: false
+          temporaryPublicStorage: false
+          configPath: ./lighthouse/configs/${{ inputs.service }}/lighthouserc-desktop.json
+
+      - name: Archive desktop results
+        if: always()
+        run: |
+          mkdir -p results/lighthouse/desktop
+          [ -d .lighthouseci ] && cp -R .lighthouseci/. results/lighthouse/desktop/
+
+      - name: Upload desktop artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-desktop-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          path: results/lighthouse/desktop/
+          if-no-files-found: warn
+
+      # ── Summary ──────────────────────────────────────────────────────────
+      - name: Print mobile summary
+        if: always()
+        run: |
+          if [ -f results/lighthouse/mobile/assertion-results.json ]; then
+            python3 scripts/lhci_summary.py \
+              --results results/lighthouse/mobile/assertion-results.json \
+              --target "${{ inputs.target }}" \
+              --service "${{ inputs.service }}-mobile"
+          else
+            echo "No mobile assertion-results.json found"
+          fi
+
+      - name: Print desktop summary
+        if: always()
+        run: |
+          if [ -f results/lighthouse/desktop/assertion-results.json ]; then
+            python3 scripts/lhci_summary.py \
+              --results results/lighthouse/desktop/assertion-results.json \
+              --target "${{ inputs.target }}" \
+              --service "${{ inputs.service }}-desktop"
+          else
+            echo "No desktop assertion-results.json found"
+          fi
+
+      # ── Metadata ─────────────────────────────────────────────────────────
+      - name: Save run metadata
+        if: always()
+        run: |
+          mkdir -p results/meta
+          cat <<EOF > results/meta/run-info.json
+          {
+            "target": "${{ inputs.target }}",
+            "service": "${{ inputs.service }}",
+            "url": "${{ inputs.url }}",
+            "runs": "${{ inputs.runs }}",
+            "actor": "${{ github.actor }}",
+            "sha": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload metadata artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-meta-${{ inputs.target }}-${{ inputs.service }}-${{ github.run_id }}
+          path: results/meta/
+          if-no-files-found: warn
