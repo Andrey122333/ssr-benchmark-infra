@@ -51,6 +51,10 @@ export const options = {
 
 function hitLanding() {
   const res = http.get(`${BASE_URL}${TARGET_PATH}`, {
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    },
     tags: { name: 'stress_landing' },
   });
 
@@ -61,9 +65,16 @@ function hitLanding() {
 }
 
 function hitCatalog() {
+  const noCache = {
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    },
+  };
+
   const responses = http.batch([
-    ['GET', `${BASE_URL}${TARGET_PATH}`, null, { tags: { name: 'stress_catalog_list' } }],
-    ['GET', `${BASE_URL}${ITEM_PATH}`, null, { tags: { name: 'stress_catalog_item' } }],
+    ['GET', `${BASE_URL}${TARGET_PATH}`, null, { ...noCache, tags: { name: 'stress_catalog_list' } }],
+    ['GET', `${BASE_URL}${ITEM_PATH}`, null, { ...noCache, tags: { name: 'stress_catalog_item' } }],
   ]);
 
   check(responses[0], {
