@@ -74,10 +74,10 @@ jobs:
 
       - name: Setup SSH
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          mkdir -p $HOME/.ssh
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> $HOME/.ssh/known_hosts
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > $HOME/.ssh/deploy_key
+          chmod 600 $HOME/.ssh/deploy_key
 
       - name: Switch active service on VPS
         env:
@@ -85,30 +85,19 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          SSH_KEY_PATH: ~/.ssh/deploy_key
+          SSH_KEY_PATH: /home/runner/.ssh/deploy_key
         run: |
           python scripts/switch_service.py \
             --target "${{ inputs.target }}" \
             --service "${{ inputs.service }}"
 
-            - name: Switch active service on VPS
-              env:
-                SSH_HOST: ${{ secrets.SSH_HOST }}
-                SSH_PORT: ${{ secrets.SSH_PORT }}
-                SSH_USER: ${{ secrets.SSH_USER }}
-                DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+            - name: Healthcheck before benchmark
               run: |
-                python scripts/switch_service.py \
-                  --target "${{ inputs.target }}" \
-                  --service "${{ inputs.service }}"
-
-      - name: Healthcheck before benchmark
-        run: |
-          python scripts/healthcheck.py \
-            --url "${{ inputs.url }}" \
-            --attempts 15 \
-            --delay 5 \
-            --timeout 10
+                python scripts/healthcheck.py \
+                  --url "${{ inputs.url }}" \
+                  --attempts 15 \
+                  --delay 5 \
+                  --timeout 10
 
       - name: Run Lighthouse CI
         id: lighthouse
