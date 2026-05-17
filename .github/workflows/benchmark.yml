@@ -72,16 +72,35 @@ jobs:
           echo "k6_script=${{ inputs.k6_script }}"
           echo "k6_flags=${{ inputs.k6_flags }}"
 
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
       - name: Switch active service on VPS
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          SSH_KEY_PATH: ~/.ssh/deploy_key
         run: |
           python scripts/switch_service.py \
             --target "${{ inputs.target }}" \
             --service "${{ inputs.service }}"
+
+            - name: Switch active service on VPS
+              env:
+                SSH_HOST: ${{ secrets.SSH_HOST }}
+                SSH_PORT: ${{ secrets.SSH_PORT }}
+                SSH_USER: ${{ secrets.SSH_USER }}
+                DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+              run: |
+                python scripts/switch_service.py \
+                  --target "${{ inputs.target }}" \
+                  --service "${{ inputs.service }}"
 
       - name: Healthcheck before benchmark
         run: |

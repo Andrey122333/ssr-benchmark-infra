@@ -36,12 +36,13 @@ def run(cmd, check=True):
 
 def main():
     parser = argparse.ArgumentParser(description="Switch active service on VPS")
-    parser.add_argument("--target", choices=TARGETS.keys(), required=True, help="Target VPS: next, nuxt, svelte")
-    parser.add_argument("--service", choices=["landing", "catalog"], required=True, help="Service to keep active")
-    parser.add_argument("--host", default=os.getenv("SSH_HOST"), help="SSH host")
-    parser.add_argument("--port", default=os.getenv("SSH_PORT", "22"), help="SSH port")
-    parser.add_argument("--user", default=os.getenv("SSH_USER"), help="SSH user")
-    parser.add_argument("--remote-path", default=os.getenv("DEPLOY_PATH"), help="Remote base deploy path")
+    parser.add_argument("--target", choices=TARGETS.keys(), required=True)
+    parser.add_argument("--service", choices=["landing", "catalog"], required=True)
+    parser.add_argument("--host", default=os.getenv("SSH_HOST"))
+    parser.add_argument("--port", default=os.getenv("SSH_PORT", "22"))
+    parser.add_argument("--user", default=os.getenv("SSH_USER"))
+    parser.add_argument("--remote-path", default=os.getenv("DEPLOY_PATH"))
+    parser.add_argument("--ssh-key", default=os.getenv("SSH_KEY_PATH"))
     args = parser.parse_args()
 
     missing = []
@@ -63,7 +64,12 @@ def main():
     passive_service = target_cfg["services"][passive_key]
 
     remote_dir = f"{args.remote_path.rstrip('/')}/{args.target}"
-    ssh_base = f"ssh -p {shlex.quote(str(args.port))} {shlex.quote(args.user)}@{shlex.quote(args.host)}"
+    key_opt = f"-i {shlex.quote(args.ssh_key)}" if args.ssh_key else ""
+    ssh_base = (
+        f"ssh -p {shlex.quote(str(args.port))} "
+        f"{key_opt} "
+        f"{shlex.quote(args.user)}@{shlex.quote(args.host)}"
+    )
 
     remote_script = f"""
         set -e
