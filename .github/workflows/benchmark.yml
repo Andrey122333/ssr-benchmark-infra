@@ -29,7 +29,7 @@ on:
       lighthouse_runs:
         description: Number of Lighthouse runs
         required: true
-        default: "3"
+        default: "10"
         type: string
       k6_script:
         description: k6 script file
@@ -91,13 +91,13 @@ jobs:
             --target "${{ inputs.target }}" \
             --service "${{ inputs.service }}"
 
-            - name: Healthcheck before benchmark
-              run: |
-                python scripts/healthcheck.py \
-                  --url "${{ inputs.url }}" \
-                  --attempts 15 \
-                  --delay 5 \
-                  --timeout 10
+      - name: Healthcheck before benchmark
+        run: |
+          python scripts/healthcheck.py \
+            --url "${{ inputs.url }}" \
+            --attempts 15 \
+            --delay 5 \
+            --timeout 10
 
       - name: Run Lighthouse CI
         id: lighthouse
@@ -108,7 +108,7 @@ jobs:
           runs: ${{ inputs.lighthouse_runs }}
           uploadArtifacts: true
           temporaryPublicStorage: true
-          configPath: ./lighthouse/configs/landing/lighthouserc.json
+          configPath: ./lighthouse/configs/${{ inputs.service }}/lighthouserc.json
 
       - name: Prepare k6 results directory
         run: mkdir -p results/k6
