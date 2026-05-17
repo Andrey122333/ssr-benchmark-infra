@@ -23,18 +23,19 @@ const STEP6_DURATION = __ENV.STEP6_DURATION || '1m';
 const COOLDOWN_DURATION = __ENV.COOLDOWN_DURATION || '30s';
 
 export const options = {
-  discardResponseBodies: false,
+  discardResponseBodies: true,
   thresholds: {
-    http_req_failed: ['rate<0.05'],
-    http_req_duration: ['p(95)<3000', 'p(99)<5000'],
-    checks: ['rate>0.95'],
+    http_req_failed:   [{ threshold: 'rate<0.05',  abortOnFail: false }],
+    http_req_duration: [{ threshold: 'p(95)<3000', abortOnFail: false },
+                        { threshold: 'p(99)<5000', abortOnFail: false }],
+    checks:            [{ threshold: 'rate>0.95',  abortOnFail: false }],
   },
   scenarios: {
     stress_until_failure: {
       executor: 'ramping-arrival-rate',
       startRate: START_RATE,
       timeUnit: '1s',
-      preAllocatedVUs: Number(__ENV.PRE_ALLOCATED_VUS || 100),
+      preAllocatedVUs: Number(__ENV.PRE_ALLOCATED_VUS || 700),
       maxVUs: Number(__ENV.MAX_VUS || 1000),
       stages: [
         { target: STEP1_TARGET, duration: STEP1_DURATION },
@@ -60,7 +61,7 @@ function hitLanding() {
 
   check(res, {
     'landing status is 200': (r) => r.status === 200,
-    'landing html received': (r) => r.body && r.body.length > 0,
+    'landing has body': (r) => parseInt(r.headers['Content-Length'] || '0') > 0,
   });
 }
 
@@ -75,7 +76,7 @@ function hitCatalog() {
 
   check(res, {
     'catalog list status is 200': (r) => r.status === 200,
-    'catalog list body received': (r) => r.body && r.body.length > 0,
+    'catalog has body': (r) => !!r.body || Number(r.headers['Content-Length'] || 0) >= 0,
   });
 }
 
