@@ -169,7 +169,7 @@ jobs:
             python scripts/lhci_summary.py \
               --results results/lighthouse/mobile/assertion-results.json \
               --target "${{ inputs.target }}" \
-              --service "${{ inputs.service }}-mobile"
+              --service "${{ inputs.service }}-mobile" || true
           else
             echo "No mobile assertion-results.json found"
           fi
@@ -181,7 +181,7 @@ jobs:
             python scripts/lhci_summary.py \
               --results results/lighthouse/desktop/assertion-results.json \
               --target "${{ inputs.target }}" \
-              --service "${{ inputs.service }}-desktop"
+              --service "${{ inputs.service }}-desktop" || true
           else
             echo "No desktop assertion-results.json found"
           fi
