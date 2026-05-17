@@ -76,7 +76,7 @@ function hitCatalog() {
 
   check(res, {
     'catalog list status is 200': (r) => r.status === 200,
-    'catalog has body': (r) => !!r.body || Number(r.headers['Content-Length'] || 0) >= 0,
+    'catalog has body': (r) => Number(r.headers['Content-Length'] || 0) > 0,
   });
 }
 

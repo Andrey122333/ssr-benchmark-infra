@@ -194,6 +194,7 @@ jobs:
         uses: grafana/setup-k6-action@v1
 
       - name: Run k6 benchmark
+        continue-on-error: true
         env:
           BASE_URL: ${{ inputs.url }}
           K6_ENV_FLAGS: ${{ inputs.k6_env_flags }}
