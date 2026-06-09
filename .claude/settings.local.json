@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem -Recurse \"c:\\\\Users\\\\Andrew\\\\YandexDisk\\\\Общее\\\\общее\\\\ИТМО\\\\Преддипломная практика\\\\ssr-benchmark-infra\\\\analyze\" | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"c:\\\\Users\\\\Andrew\\\\YandexDisk\\\\Общее\\\\общее\\\\ИТМО\\\\Преддипломная практика\\\\ssr-benchmark-infra\\\\analyze\\\\\",\"\"\\) } | Sort-Object)"
-    ]
-  }
-}

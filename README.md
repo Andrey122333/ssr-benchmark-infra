@@ -96,6 +96,6 @@ ssr-benchmark-infra/
 ## Документация
 
 Подробности вынесены в отдельные документы:
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
-- [DEPLOY.md](./DEPLOY.md)
-- [BENCHMARK.md](./BENCHMARK.md)
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- [DEPLOY.md](./docs/DEPLOY.md)
+- [BENCHMARK.md](./docs/BENCHMARK.md)
